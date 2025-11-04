@@ -141,9 +141,20 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         
+        // Optimize canvas rendering
+        ctx.imageSmoothingEnabled = false; // Faster rendering
+        
         let playerNumber = 0;
-        let gameState = null;
+        let gameState = {
+            paddle1: { y: 250 },
+            paddle2: { y: 250 },
+            ball: { x: 400, y: 300 },
+            score: { player1: 0, player2: 0 },
+            gameRunning: false
+        };
         let keys = {};
+        let lastPaddleEmit = 0;
+        let animationId = null;
 
         // Socket event handlers
         socket.on('playerAssigned', (player) => {
@@ -155,25 +166,42 @@
         socket.on('gameState', (state) => {
             gameState = state;
             updateDisplay();
-            drawGame();
+        });
+
+        socket.on('paddleUpdate', (data) => {
+            gameState.paddle1 = data.paddle1;
+            gameState.paddle2 = data.paddle2;
+        });
+
+        socket.on('ballUpdate', (data) => {
+            gameState.ball = data.ball;
+            gameState.score = data.score;
+            updateDisplay();
         });
 
         socket.on('gameStart', (state) => {
             gameState = state;
+            gameState.gameRunning = true;
             document.getElementById('status').textContent = 'Game Started!';
             document.getElementById('readyBtn').disabled = true;
+            startAnimation();
+            inputLoop(); // Start input loop
         });
 
         socket.on('gameOver', (data) => {
+            gameState.gameRunning = false;
             document.getElementById('status').innerHTML = `<span class="winner">🎉 ${data.winner} Wins! 🎉</span>`;
             document.getElementById('readyBtn').disabled = false;
             document.getElementById('readyBtn').textContent = 'Play Again';
+            stopAnimation();
         });
 
         socket.on('playerDisconnected', () => {
+            gameState.gameRunning = false;
             document.getElementById('status').textContent = 'Other player disconnected. Waiting for a new player...';
             document.getElementById('readyBtn').disabled = false;
             document.getElementById('readyBtn').textContent = 'Ready';
+            stopAnimation();
         });
 
         socket.on('gameFull', () => {
@@ -187,15 +215,11 @@
         }
 
         function updateDisplay() {
-            if (gameState) {
-                document.getElementById('score1').textContent = gameState.score.player1;
-                document.getElementById('score2').textContent = gameState.score.player2;
-            }
+            document.getElementById('score1').textContent = gameState.score.player1;
+            document.getElementById('score2').textContent = gameState.score.player2;
         }
 
         function drawGame() {
-            if (!gameState) return;
-
             // Clear canvas
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -210,75 +234,106 @@
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Draw paddles
+            // Draw paddles (only these need to update)
             const paddleWidth = 10;
             const paddleHeight = 100;
 
-            // Player 1 paddle (left)
+            // Player 1 paddle (left) - green
             ctx.fillStyle = '#00ff00';
             ctx.fillRect(20, gameState.paddle1.y, paddleWidth, paddleHeight);
 
-            // Player 2 paddle (right)
+            // Player 2 paddle (right) - magenta
             ctx.fillStyle = '#ff00ff';
             ctx.fillRect(770, gameState.paddle2.y, paddleWidth, paddleHeight);
 
             // Draw ball
             ctx.fillStyle = '#fff';
             ctx.beginPath();
-            ctx.arc(gameState.ball.x, gameState.ball.y, 10, 0, Math.PI * 2);
+            ctx.arc(Math.round(gameState.ball.x), Math.round(gameState.ball.y), 10, 0, Math.PI * 2);
             ctx.fill();
         }
 
-        // Keyboard controls
-        document.addEventListener('keydown', (e) => {
-            if (!gameState || !gameState.gameRunning) return;
-
-            keys[e.key] = true;
-
-            if (playerNumber === 1) {
-                if (e.key === 'w' || e.key === 'W') {
-                    socket.emit('paddleMove', 'up');
-                } else if (e.key === 's' || e.key === 'S') {
-                    socket.emit('paddleMove', 'down');
-                }
-            } else if (playerNumber === 2) {
-                if (e.key === 'ArrowUp') {
-                    socket.emit('paddleMove', 'up');
-                } else if (e.key === 'ArrowDown') {
-                    socket.emit('paddleMove', 'down');
+        function startAnimation() {
+            if (animationId) return;
+            function animate() {
+                if (gameState.gameRunning) {
+                    drawGame();
+                    animationId = requestAnimationFrame(animate);
                 }
             }
+            animate();
+        }
+
+        function stopAnimation() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            drawGame(); // Draw final state
+        }
+
+        // Keyboard controls - optimized
+        document.addEventListener('keydown', (e) => {
+            if (!gameState.gameRunning) return;
+            const key = e.key.toLowerCase();
+            keys[key] = true;
+            // Handle arrow keys
+            if (e.key === 'ArrowUp') keys['arrowup'] = true;
+            if (e.key === 'ArrowDown') keys['arrowdown'] = true;
         });
 
         document.addEventListener('keyup', (e) => {
-            keys[e.key] = false;
+            const key = e.key.toLowerCase();
+            keys[key] = false;
+            // Handle arrow keys
+            if (e.key === 'ArrowUp') keys['arrowup'] = false;
+            if (e.key === 'ArrowDown') keys['arrowdown'] = false;
         });
 
-        // Continuous movement for better responsiveness
-        setInterval(() => {
-            if (!gameState || !gameState.gameRunning) return;
+        // Optimized continuous movement with throttling
+        function handlePaddleMovement() {
+            if (!gameState.gameRunning) return;
+
+            const now = Date.now();
+            if (now - lastPaddleEmit < 16) return; // Throttle to ~60 updates/sec
+            lastPaddleEmit = now;
+
+            let moved = false;
+            let direction = null;
 
             if (playerNumber === 1) {
-                if (keys['w'] || keys['W']) {
-                    socket.emit('paddleMove', 'up');
-                } else if (keys['s'] || keys['S']) {
-                    socket.emit('paddleMove', 'down');
+                if (keys['w']) {
+                    direction = 'up';
+                    moved = true;
+                } else if (keys['s']) {
+                    direction = 'down';
+                    moved = true;
                 }
             } else if (playerNumber === 2) {
-                if (keys['ArrowUp']) {
-                    socket.emit('paddleMove', 'up');
-                } else if (keys['ArrowDown']) {
-                    socket.emit('paddleMove', 'down');
+                if (keys['arrowup']) {
+                    direction = 'up';
+                    moved = true;
+                } else if (keys['arrowdown']) {
+                    direction = 'down';
+                    moved = true;
                 }
             }
-        }, 50);
 
-        // Animation loop
-        setInterval(() => {
-            if (gameState) {
-                drawGame();
+            if (moved && direction) {
+                socket.emit('paddleMove', direction);
             }
-        }, 16);
+        }
+
+        // Use requestAnimationFrame for smooth input handling
+        function inputLoop() {
+            handlePaddleMovement();
+            if (gameState.gameRunning) {
+                requestAnimationFrame(inputLoop);
+            }
+        }
+
+        // Initial render
+        drawGame();
     </script>
 </body>
 </html>

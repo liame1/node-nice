@@ -73,6 +73,9 @@ io.on('connection', (socket) => {
         }
     });
     
+    // Track last paddle update time per player to throttle
+    const lastPaddleUpdate = {};
+    
     // Handle paddle movement
     socket.on('paddleMove', (direction) => {
         if (!gameState.gameRunning) return;
@@ -80,22 +83,36 @@ io.on('connection', (socket) => {
         const player = gameState.players[socket.id];
         if (!player) return;
         
-        const paddleSpeed = 10;
+        // Throttle paddle updates to prevent spam
+        const now = Date.now();
+        if (lastPaddleUpdate[socket.id] && now - lastPaddleUpdate[socket.id] < 16) {
+            return; // Skip if too frequent
+        }
+        lastPaddleUpdate[socket.id] = now;
+        
+        const paddleSpeed = 12;
+        const paddleHeight = 100;
+        const maxY = 600 - paddleHeight;
+        
         if (player.player === 1) {
             if (direction === 'up' && gameState.paddle1.y > 0) {
-                gameState.paddle1.y -= paddleSpeed;
-            } else if (direction === 'down' && gameState.paddle1.y < 500) {
-                gameState.paddle1.y += paddleSpeed;
+                gameState.paddle1.y = Math.max(0, gameState.paddle1.y - paddleSpeed);
+            } else if (direction === 'down' && gameState.paddle1.y < maxY) {
+                gameState.paddle1.y = Math.min(maxY, gameState.paddle1.y + paddleSpeed);
             }
         } else if (player.player === 2) {
             if (direction === 'up' && gameState.paddle2.y > 0) {
-                gameState.paddle2.y -= paddleSpeed;
-            } else if (direction === 'down' && gameState.paddle2.y < 500) {
-                gameState.paddle2.y += paddleSpeed;
+                gameState.paddle2.y = Math.max(0, gameState.paddle2.y - paddleSpeed);
+            } else if (direction === 'down' && gameState.paddle2.y < maxY) {
+                gameState.paddle2.y = Math.min(maxY, gameState.paddle2.y + paddleSpeed);
             }
         }
         
-        io.emit('gameState', gameState);
+        // Only emit paddle updates, not full game state
+        io.emit('paddleUpdate', {
+            paddle1: gameState.paddle1,
+            paddle2: gameState.paddle2
+        });
     });
     
     // Handle disconnection
@@ -128,10 +145,10 @@ function resetGame() {
     gameState.gameRunning = false;
 }
 
-// Game loop - update ball position
+// Game loop - update ball position (optimized to 30 FPS for better performance)
 setInterval(() => {
     if (gameState.gameRunning && Object.keys(gameState.players).length === 2) {
-        // Update ball position
+        // Update ball position (simplified for consistency)
         gameState.ball.x += gameState.ball.velocityX;
         gameState.ball.y += gameState.ball.velocityY;
         
@@ -159,7 +176,9 @@ setInterval(() => {
             gameState.ball.y + ballRadius >= gameState.paddle1.y &&
             gameState.ball.y - ballRadius <= gameState.paddle1.y + paddleHeight) {
             if (gameState.ball.velocityX < 0) { // Only bounce if moving left
-                gameState.ball.velocityX = -gameState.ball.velocityX;
+                // Accelerate ball by 2% on each hit
+                gameState.ball.velocityX = -gameState.ball.velocityX * 1.02;
+                gameState.ball.velocityY = gameState.ball.velocityY * 1.02;
                 gameState.ball.x = paddle1Right + ballRadius;
             }
         }
@@ -172,7 +191,9 @@ setInterval(() => {
             gameState.ball.y + ballRadius >= gameState.paddle2.y &&
             gameState.ball.y - ballRadius <= gameState.paddle2.y + paddleHeight) {
             if (gameState.ball.velocityX > 0) { // Only bounce if moving right
-                gameState.ball.velocityX = -gameState.ball.velocityX;
+                // Accelerate ball by 2% on each hit
+                gameState.ball.velocityX = -gameState.ball.velocityX * 1.02;
+                gameState.ball.velocityY = gameState.ball.velocityY * 1.02;
                 gameState.ball.x = paddle2X - ballRadius;
             }
         }
@@ -198,9 +219,13 @@ setInterval(() => {
             }
         }
         
-        io.emit('gameState', gameState);
+        // Only emit ball updates (not full state) to reduce payload
+        io.emit('ballUpdate', {
+            ball: gameState.ball,
+            score: gameState.score
+        });
     }
-}, 16); // ~60 FPS
+}, 33); // ~30 FPS for network updates (reduced from 60 FPS)
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {
