@@ -131,8 +131,7 @@
 
         <div class="controls">
             <h3>Controls:</h3>
-            <div><strong>Player 1:</strong> W (up) / S (down)</div>
-            <div><strong>Player 2:</strong> ↑ (up) / ↓ (down)</div>
+            <div><strong>Both Players:</strong> W (up) / S (down)</div>
         </div>
     </div>
 
@@ -272,22 +271,16 @@
             drawGame(); // Draw final state
         }
 
-        // Keyboard controls - optimized
+        // Keyboard controls - optimized (both players use WASD)
         document.addEventListener('keydown', (e) => {
             if (!gameState.gameRunning) return;
             const key = e.key.toLowerCase();
             keys[key] = true;
-            // Handle arrow keys
-            if (e.key === 'ArrowUp') keys['arrowup'] = true;
-            if (e.key === 'ArrowDown') keys['arrowdown'] = true;
         });
 
         document.addEventListener('keyup', (e) => {
             const key = e.key.toLowerCase();
             keys[key] = false;
-            // Handle arrow keys
-            if (e.key === 'ArrowUp') keys['arrowup'] = false;
-            if (e.key === 'ArrowDown') keys['arrowdown'] = false;
         });
 
         // Optimized continuous movement with throttling
@@ -301,22 +294,13 @@
             let moved = false;
             let direction = null;
 
-            if (playerNumber === 1) {
-                if (keys['w']) {
-                    direction = 'up';
-                    moved = true;
-                } else if (keys['s']) {
-                    direction = 'down';
-                    moved = true;
-                }
-            } else if (playerNumber === 2) {
-                if (keys['arrowup']) {
-                    direction = 'up';
-                    moved = true;
-                } else if (keys['arrowdown']) {
-                    direction = 'down';
-                    moved = true;
-                }
+            // Both players use W/S keys
+            if (keys['w']) {
+                direction = 'up';
+                moved = true;
+            } else if (keys['s']) {
+                direction = 'down';
+                moved = true;
             }
 
             if (moved && direction) {

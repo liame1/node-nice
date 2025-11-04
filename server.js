@@ -176,9 +176,9 @@ setInterval(() => {
             gameState.ball.y + ballRadius >= gameState.paddle1.y &&
             gameState.ball.y - ballRadius <= gameState.paddle1.y + paddleHeight) {
             if (gameState.ball.velocityX < 0) { // Only bounce if moving left
-                // Accelerate ball by 2% on each hit
-                gameState.ball.velocityX = -gameState.ball.velocityX * 1.02;
-                gameState.ball.velocityY = gameState.ball.velocityY * 1.02;
+                // Accelerate ball by 10% on each hit
+                gameState.ball.velocityX = -gameState.ball.velocityX * 1.10;
+                gameState.ball.velocityY = gameState.ball.velocityY * 1.10;
                 gameState.ball.x = paddle1Right + ballRadius;
             }
         }
@@ -191,9 +191,9 @@ setInterval(() => {
             gameState.ball.y + ballRadius >= gameState.paddle2.y &&
             gameState.ball.y - ballRadius <= gameState.paddle2.y + paddleHeight) {
             if (gameState.ball.velocityX > 0) { // Only bounce if moving right
-                // Accelerate ball by 2% on each hit
-                gameState.ball.velocityX = -gameState.ball.velocityX * 1.02;
-                gameState.ball.velocityY = gameState.ball.velocityY * 1.02;
+                // Accelerate ball by 10% on each hit
+                gameState.ball.velocityX = -gameState.ball.velocityX * 1.10;
+                gameState.ball.velocityY = gameState.ball.velocityY * 1.10;
                 gameState.ball.x = paddle2X - ballRadius;
             }
         }
